@@ -1,6 +1,7 @@
 import streamlit as st
 import json
 import os
+import random
 
 # --- 1. إعدادات الصفحة والتجاوب مع الموبايل ---
 st.set_page_config(
@@ -17,19 +18,28 @@ st.markdown("""
     .stButton > button {
         width: 100% !important;
         padding: 12px !important;
-        font-size: 20px !important;
-        border-radius: 10px !important;
+        font-size: 18px !important;
+        border-radius: 12px !important;
+        margin-top: 5px;
     }
     .main-title {
         text-align: center;
         color: #FF4B4B;
-        font-size: 30px;
+        font-size: 28px;
         font-weight: bold;
+    }
+    .card {
+        background-color: #262730;
+        padding: 20px;
+        border-radius: 15px;
+        text-align: center;
+        border: 2px solid #FF4B4B;
+        margin-bottom: 15px;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. إدارة قاعدة البيانات في الذاكرة الحية (Session Database) ---
+# --- 2. إدارة قاعدة البيانات والجلسة ---
 if "users_db" not in st.session_state:
     st.session_state.users_db = {}
 
@@ -39,6 +49,15 @@ if "logged_in" not in st.session_state:
 if "username" not in st.session_state:
     st.session_state.username = ""
 
+# بنك الأسئلة والتحديات التفاعلية للعبة
+QUESTIONS_BANK = [
+    {"q": "سؤال سرعة: مين فيكم يقدر يوقع التاني في الكلام الأول؟ 🤫", "type": "challenge", "pts": 10},
+    {"q": "لو صاحبك طلب منك تدي له كل فلوسك عشان يشتري حاجة تافهة.. هتوافق؟", "options": ["أكيد، صاحب عمري", "مستحيل، أنا مش بوزع فلوس", "على حسب هو مين فيهم"], "pts": 5},
+    {"q": "تحدي: اتصل بصاحبك المفضل ودلوقتي وقوله 'أنا في القسم ومحتاجك' وشوف رد فعله! 📞😂", "type": "challenge", "pts": 15},
+    {"q": "مين فيكم الأكتر توقعاً إنه يتأخر عن أي ميعاد؟ ⏰", "options": ["أنا طبعاً", "صاحبي الخصم", "إحنا الاتنين بنتأخر"], "pts": 5},
+    {"q": "سؤال صراحة: لو جالك سفرية ببلاش لشخص واحد بس.. هتاخد صاحبك معاك ولا تروح لوحدك؟ ✈️", "options": ["هاخده معايا أكيد", "هسافر لوحدي والاستجمام أهم", "هبيع التذكرة ونقسم الفلوس"], "pts": 10},
+]
+
 # --- 3. شاشة تسجيل الدخول / إنشاء حساب جديد ---
 if not st.session_state.logged_in:
     st.markdown("<h1 class='main-title'>🍿 أهلاً بك في صاحبك خصمك</h1>", unsafe_allow_html=True)
@@ -46,23 +65,21 @@ if not st.session_state.logged_in:
     
     tab1, tab2 = st.tabs(["🔑 تسجيل الدخول", "📝 حساب جديد"])
 
-    # تبويب تسجيل الدخول
     with tab1:
         st.subheader("تسجيل الدخول")
         login_user = st.text_input("اسم المستخدم", key="login_u").strip()
         login_pass = st.text_input("كلمة السر", type="password", key="login_p").strip()
         
-        if st.button("دخول 🚀"):
+        if st.button("دخول للعبة 🚀"):
             db = st.session_state.users_db
             if login_user in db and db[login_user]["password"] == login_pass:
                 st.session_state.logged_in = True
                 st.session_state.username = login_user
-                st.success(f"مرحباً بك يا {login_user}! جاري تحويلك...")
+                st.success(f"مرحباً بك يا {login_user}!")
                 st.rerun()
             else:
-                st.error("اسم المستخدم أو كلمة السر غير صحيحة! (إذا كنت جديداً اضغط على إنشاء حساب)")
+                st.error("اسم المستخدم أو كلمة السر غير صحيحة!")
 
-    # تبويب إنشاء حساب جديد
     with tab2:
         st.subheader("إنشاء حساب جديد")
         new_user = st.text_input("اختر اسم مستخدم", key="new_u").strip()
@@ -73,27 +90,23 @@ if not st.session_state.logged_in:
             if not new_user or not new_pass:
                 st.warning("برجاء إدخال اسم المستخدم وكلمة السر!")
             elif new_user in db:
-                st.warning("اسم المستخدم هذا مستخدم بالفعل، اختر اسماً آخر.")
+                st.warning("اسم المستخدم هذا مستخدم بالفعل!")
             else:
-                # إنشاء الحساب وتسجيل الدخول فوراً
-                st.session_state.users_db[new_user] = {
-                    "password": new_pass,
-                    "score": 0
-                }
+                st.session_state.users_db[new_user] = {"password": new_pass, "score": 0}
                 st.session_state.logged_in = True
                 st.session_state.username = new_user
-                st.success("تم إنشاء الحساب بنجاح! جاري الدخول للعبة...")
+                st.success("تم إنشاء الحساب بنجاح!")
                 st.rerun()
 
-# --- 4. واجهة اللعبة الرئيسية بعد تسجيل الدخول ---
+# --- 4. واجهة اللعبة الرئيسية (صاحبك خصمك) ---
 else:
     username = st.session_state.username
-    user_data = st.session_state.users_db.get(username, {"score": 0})
+    user_score = st.session_state.users_db[username].get("score", 0)
 
-    # الشريط العلوي مع زر الخروج
+    # الشريط العلوي
     col1, col2 = st.columns([3, 1])
     with col1:
-        st.write(f"👤 اللاعب: **{username}** | 🏆 النقاط: **{user_data.get('score', 0)}**")
+        st.write(f"👤 اللاعب: **{username}** | 🏆 نقاطك: **{user_score}**")
     with col2:
         if st.button("خروج 🚪"):
             st.session_state.logged_in = False
@@ -101,18 +114,49 @@ else:
             st.rerun()
 
     st.write("---")
-    st.markdown("<h2 style='text-align: center;'>🎯 ساحة اللعب</h2>", unsafe_allow_html=True)
-    
-    # عرض صورة اللعبة إذا كانت موجودة
-    if os.path.exists("welcome_bg.jpg.jpeg"):
-        st.image("welcome_bg.jpg.jpeg", use_container_width=True)
-    elif os.path.exists("welcome_bg.jpg"):
-        st.image("welcome_bg.jpg", use_container_width=True)
+    st.markdown("<h2 class='main-title'>🔥 ساحة اللعب: صاحبك خصمك 🔥</h2>", unsafe_allow_html=True)
 
-    st.success("تم تسجيل دخولك بنجاح! أنت الآن داخل اللعبة 🥳")
+    # متغيرات الجولة الحالية
+    if "current_q" not in st.session_state:
+        st.session_state.current_q = random.choice(QUESTIONS_BANK)
 
-    # أزرار التفاعل وحفظ النقاط
-    if st.button("➕ زيادة نقطة ⭐"):
-        st.session_state.users_db[username]["score"] += 1
-        st.success("مبروك! زادت نقاطك 1 +")
+    q_data = st.session_state.current_q
+
+    # عرض بطاقة السؤال/التحدي
+    st.markdown(f"""
+        <div class="card">
+            <h3>🎯 الجولة الحالية</h3>
+            <p style="font-size: 22px; font-weight: bold;">{q_data['q']}</p>
+            <p style="color: #FFD700;">جائزة الجولة: +{q_data['pts']} نقاط</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # إذا كان السؤال يحتوي على خيارات
+    if "options" in q_data:
+        selected_option = st.radio("اختر إجابتك:", q_data["options"])
+        if st.button("إرسال الإجابة وحسب النقاط 🎯"):
+            st.session_state.users_db[username]["score"] += q_data["pts"]
+            st.success(f"إجابة قوية! كسبت {q_data['pts']} نقاط 🥳")
+            # اختيار سؤال جديد للجولة الجاية
+            st.session_state.current_q = random.choice(QUESTIONS_BANK)
+            st.rerun()
+
+    # إذا كان تحدي مادي/عملي
+    else:
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("نفذت التحدي بنجاح 💪"):
+                st.session_state.users_db[username]["score"] += q_data["pts"]
+                st.success(f"عاش يا بطل! كسبت {q_data['pts']} نقاط 🔥")
+                st.session_state.current_q = random.choice(QUESTIONS_BANK)
+                st.rerun()
+        with col_b:
+            if st.button("استسلمت / انسحبت ❌"):
+                st.warning("ولا يهمك، الجولة الجاية تعوض!")
+                st.session_state.current_q = random.choice(QUESTIONS_BANK)
+                st.rerun()
+
+    st.write("---")
+    if st.button("🔄 تغيير السؤال / تحدي آخر"):
+        st.session_state.current_q = random.choice(QUESTIONS_BANK)
         st.rerun()
