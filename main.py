@@ -18,15 +18,27 @@ def get_image_base64(image_path):
             return base64.b64encode(img_file.read()).decode('utf-8')
     return ""
 
-# --- 2. إدارة قاعدة البيانات والشبكة المحلية للجلسة ---
-if "users_db" not in st.session_state:
-    st.session_state.users_db = {}
+# --- 2. نظام حفظ الحسابات القوي والدائم (JSON File DB) ---
+DB_FILE = "sahebk_users.json"
 
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
+def load_users():
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
 
-if "username" not in st.session_state:
-    st.session_state.username = ""
+def save_users(users_data):
+    try:
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(users_data, f, ensure_ascii=False, indent=4)
+    except Exception:
+        pass
+
+# تحميل الحسابات المسجلة
+users_db = load_users()
 
 # --- 3. بنك الأسئلة والتلميحات ---
 QUESTIONS_BANK = {
@@ -86,6 +98,9 @@ if "page" not in st.session_state:
 
 if "user" not in st.session_state:
     st.session_state.user = {"id": "#10001", "name": "زائر", "score": 0}
+
+if "username" not in st.session_state:
+    st.session_state.username = ""
 
 if "q_index" not in st.session_state:
     st.session_state.q_index = 0
@@ -201,7 +216,7 @@ if st.session_state.page == "welcome":
         <style>
         .welcome-container {{
             {bg_style}
-            min-height: 55vh;
+            min-height: 50vh;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -239,12 +254,13 @@ if st.session_state.page == "welcome":
             login_u = st.text_input("اسم المستخدم", key="l_u").strip()
             login_p = st.text_input("كلمة السر", type="password", key="l_p").strip()
             if st.button("🚪 إدخـال 🎮", use_container_width=True):
-                db = st.session_state.users_db
-                if login_u in db and db[login_u]["password"] == login_p:
-                    st.session_state.logged_in = True
+                # إعادة قراءة الملف للتأكد من وجود البيانات
+                current_db = load_users()
+                if login_u in current_db and current_db[login_u]["password"] == login_p:
                     st.session_state.username = login_u
-                    st.session_state.user = db[login_u]["user_info"]
+                    st.session_state.user = current_db[login_u]["user_info"]
                     st.session_state.page = "main_hub"
+                    st.success("تم الدخول بنجاح! 🚀")
                     st.rerun()
                 else:
                     st.error("اسم المستخدم أو كلمة السر غير صحيحة!")
@@ -253,19 +269,22 @@ if st.session_state.page == "welcome":
             new_u = st.text_input("اسم مستخدم جديد", key="n_u").strip()
             new_p = st.text_input("كلمة السر", type="password", key="n_p").strip()
             if st.button("✨ إنشاء حساب ودخول", use_container_width=True):
-                db = st.session_state.users_db
+                current_db = load_users()
                 if not new_u or not new_p:
                     st.warning("يرجى ملء جميع البيانات!")
-                elif new_u in db:
-                    st.warning("اسم المستخدم مستخدم بالفعل!")
+                elif new_u in current_db:
+                    st.warning("اسم المستخدم مستخدم بالفعل، اختر اسماً آخر!")
                 else:
                     user_id = f"#{random.randint(10000, 99999)}"
                     user_info = {"id": user_id, "name": new_u, "score": 0}
-                    st.session_state.users_db[new_u] = {"password": new_p, "user_info": user_info}
-                    st.session_state.logged_in = True
+                    # حفظ الحساب رسمياً في ملف DB
+                    current_db[new_u] = {"password": new_p, "user_info": user_info}
+                    save_users(current_db)
+                    
                     st.session_state.username = new_u
                     st.session_state.user = user_info
                     st.session_state.page = "main_hub"
+                    st.success("تم إنشاء الحساب وحفظه بنجاح! 🎉")
                     st.rerun()
 
 
@@ -280,6 +299,12 @@ elif st.session_state.page == "main_hub":
             🍿 اللعبة: <b>صاحبك خصمك</b> &nbsp;|&nbsp; 👤 اللاعب: <b>{user['name']}</b> &nbsp;|&nbsp; 🆔 الـ ID: <b>{user['id']}</b> &nbsp;|&nbsp; 🏆 السكور: <b>{user['score']} ⭐</b>
         </div>
     """, unsafe_allow_html=True)
+
+    # زر الخروج
+    if st.button("🚪 تسجيل الخروج"):
+        st.session_state.page = "welcome"
+        st.session_state.username = ""
+        st.rerun()
 
     st.subheader("🎲 ألعاب التسالي ومستودع المرح")
 
@@ -443,9 +468,13 @@ elif st.session_state.page == "game_room":
                 if st.button("🎉 إجابة صحيحة (+10)", use_container_width=True):
                     st.balloons()
                     st.session_state.user["score"] += 10
-                    # حفظ النقاط في حساب المستخدم
-                    if st.session_state.username in st.session_state.users_db:
-                        st.session_state.users_db[st.session_state.username]["user_info"]["score"] = st.session_state.user["score"]
+                    # حفظ النقاط في قاعدة البيانات
+                    u_name = st.session_state.username
+                    if u_name:
+                        db = load_users()
+                        if u_name in db:
+                            db[u_name]["user_info"]["score"] = st.session_state.user["score"]
+                            save_users(db)
                     st.session_state.q_index += 1
                     st.rerun()
             with col3:
